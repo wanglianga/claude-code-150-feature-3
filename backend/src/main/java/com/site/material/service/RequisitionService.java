@@ -25,16 +25,19 @@ public class RequisitionService {
     private final ProjectBudgetRepository budgetRepo;
     private final MaterialRepository materialRepo;
     private final CrewRepository crewRepo;
+    private final StockCheckService stockCheckService;
     private final CodeGenerator codes;
 
     public RequisitionService(RequisitionRepository reqRepo, MaterialBatchRepository batchRepo,
                               ProjectBudgetRepository budgetRepo, MaterialRepository materialRepo,
-                              CrewRepository crewRepo, CodeGenerator codes) {
+                              CrewRepository crewRepo, StockCheckService stockCheckService,
+                              CodeGenerator codes) {
         this.reqRepo = reqRepo;
         this.batchRepo = batchRepo;
         this.budgetRepo = budgetRepo;
         this.materialRepo = materialRepo;
         this.crewRepo = crewRepo;
+        this.stockCheckService = stockCheckService;
         this.codes = codes;
     }
 
@@ -43,7 +46,15 @@ public class RequisitionService {
         if (req.items() == null || req.items().isEmpty()) {
             throw new BusinessException("领料明细不能为空");
         }
-        crewRepo.findById(req.crewId()).orElseThrow(() -> new BusinessException("班组不存在"));
+        Crew crew = crewRepo.findById(req.crewId())
+                .orElseThrow(() -> new BusinessException("班组不存在"));
+        // 盘点追查受限班组：新申请先转项目经理审批，仓管不得直接发料
+        Set<Long> frozen = stockCheckService.frozenMaterialIds();
+        for (ItemIn it : req.items()) {
+            if (frozen.contains(it.materialId())) {
+                throw new BusinessException("该材料盘点差异尚未关闭，暂停领用");
+            }
+        }
         Requisition r = new Requisition();
         r.setCode(codes.next("LL"));
         r.setCrewId(req.crewId());
@@ -55,13 +66,35 @@ public class RequisitionService {
         r.setRemark(req.remark());
         r.setApplicant(SecurityUtil.currentName());
         r.setApplyTime(LocalDateTime.now());
-        r.setStatus("SUBMITTED"); // 班组申请即提交
+        r.setStatus(crew.isRequisitionRestricted() ? "PENDING_PM" : "SUBMITTED");
         for (ItemIn it : req.items()) {
             RequisitionItem item = new RequisitionItem();
             item.setRequisition(r);
             item.setMaterialId(it.materialId());
             item.setApplyQty(it.applyQty());
             r.getItems().add(item);
+        }
+        Requisition saved = reqRepo.save(r);
+        if (crew.isRequisitionRestricted()) {
+            r.setRemark((r.getRemark() == null ? "" : r.getRemark() + "；")
+                    + "该班组存在盘点夜料未登记记录，本单须项目经理审批后仓管方可发料");
+        }
+        return saved;
+    }
+
+    /** 受限班组领料单：项目经理审批通过后回到待发料队列 */
+    @Transactional
+    public Requisition approve(Long id, String remark) {
+        Requisition r = reqRepo.findByIdWithItems(id)
+                .orElseThrow(() -> new BusinessException("领料单不存在"));
+        if (!"PENDING_PM".equals(r.getStatus())) {
+            throw new BusinessException("仅待项目经理审批的单据可审批，当前状态: " + r.getStatus());
+        }
+        r.setStatus("SUBMITTED");
+        r.setPmApprovedBy(SecurityUtil.currentName());
+        r.setPmApproveTime(LocalDateTime.now());
+        if (remark != null && !remark.isBlank()) {
+            r.setRemark((r.getRemark() == null ? "" : r.getRemark() + "；") + "PM审批意见：" + remark);
         }
         return reqRepo.save(r);
     }
@@ -71,6 +104,7 @@ public class RequisitionService {
         Requisition r = reqRepo.findByIdWithItems(id).orElseThrow(() -> new BusinessException("领料单不存在"));
         Map<Long, Material> mats = materialRepo.findAll().stream()
                 .collect(Collectors.toMap(Material::getId, Function.identity()));
+        Map<Long, String> frozenCodes = stockCheckService.frozenCheckCodes();
         List<Map<String, Object>> rows = new ArrayList<>();
         for (RequisitionItem it : r.getItems()) {
             Material m = mats.get(it.getMaterialId());
@@ -95,6 +129,7 @@ public class RequisitionService {
             row.put("alreadyIssued", MasterDataService.round(alreadyIssued));
             row.put("onHandQty", MasterDataService.round(onHand));
             row.put("stockEnough", onHand + 1e-9 >= it.getApplyQty());
+            row.put("frozenByCheck", frozenCodes.get(it.getMaterialId()));
             row.put("overBudget", budgetQty > 0 && alreadyIssued + it.getApplyQty() > budgetQty + 1e-9);
             row.put("batches", batches.stream().map(b -> Map.of(
                     "batchId", b.getId(), "batchNo", b.getBatchNo(),
@@ -105,6 +140,8 @@ public class RequisitionService {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("requisition", view(r));
         out.put("checks", rows);
+        out.put("crewRestricted", crewRepo.findById(r.getCrewId())
+                .map(Crew::isRequisitionRestricted).orElse(false));
         return out;
     }
 
@@ -124,13 +161,19 @@ public class RequisitionService {
     public Map<String, Object> issue(Long id, IssueRequest req) {
         Requisition r = reqRepo.findByIdWithItems(id).orElseThrow(() -> new BusinessException("领料单不存在"));
         if (!"SUBMITTED".equals(r.getStatus())) {
-            throw new BusinessException("仅待发料单据可执行发料，当前状态: " + r.getStatus());
+            throw new BusinessException("仅待发料单据可执行发料，当前状态: "
+                    + ("PENDING_PM".equals(r.getStatus()) ? "待项目经理审批" : r.getStatus()));
         }
         Map<Long, IssueItemIn> input = req.items().stream()
                 .collect(Collectors.toMap(IssueItemIn::itemId, Function.identity()));
+        Map<Long, String> frozen = stockCheckService.frozenCheckCodes();
         List<String> warnings = new ArrayList<>();
 
         for (RequisitionItem item : r.getItems()) {
+            if (frozen.containsKey(item.getMaterialId())) {
+                throw new BusinessException("材料处于盘点差异冻结期（盘点单 "
+                        + frozen.get(item.getMaterialId()) + "），差异关闭前暂停领用");
+            }
             IssueItemIn in = input.get(item.getId());
             if (in == null || in.issuedQty() == null || in.issuedQty() <= 0) {
                 throw new BusinessException("明细 " + item.getId() + " 未填写实发数量");
@@ -182,8 +225,8 @@ public class RequisitionService {
     @Transactional
     public Requisition reject(Long id, String remark) {
         Requisition r = reqRepo.findByIdWithItems(id).orElseThrow(() -> new BusinessException("领料单不存在"));
-        if (!"SUBMITTED".equals(r.getStatus())) {
-            throw new BusinessException("仅待发料单据可驳回");
+        if (!"SUBMITTED".equals(r.getStatus()) && !"PENDING_PM".equals(r.getStatus())) {
+            throw new BusinessException("仅待发料/待审批单据可驳回");
         }
         r.setStatus("REJECTED");
         r.setRemark(remark);
@@ -241,11 +284,18 @@ public class RequisitionService {
         m.put("drawingNo", r.getDrawingNo());
         m.put("status", r.getStatus());
         m.put("urgent", r.isUrgent());
+        m.put("backdated", r.isBackdated());
+        m.put("sourceCheckId", r.getSourceCheckId());
         m.put("applicant", r.getApplicant());
         m.put("issuedBy", r.getIssuedBy());
         m.put("confirmedBy", r.getConfirmedBy());
+        m.put("pmApprovedBy", r.getPmApprovedBy());
+        m.put("pmApproveTime", r.getPmApproveTime());
         m.put("applyTime", r.getApplyTime());
         m.put("issueTime", r.getIssueTime());
+        m.put("actualUseTime", r.getActualUseTime());
+        m.put("crewRestricted", crewRepo.findById(r.getCrewId())
+                .map(Crew::isRequisitionRestricted).orElse(false));
         m.put("remark", r.getRemark());
         m.put("items", items);
         m.put("totalAmount", MasterDataService.round(items.stream()

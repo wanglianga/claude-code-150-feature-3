@@ -12,12 +12,29 @@ export const ROLE_LABEL = {
 
 export const STATUS_LABEL = {
   DRAFT: '草稿', SUBMITTED: '待处理', ISSUED: '已发料', REJECTED: '已驳回',
-  CONFIRMED: '已确认', CLAIMED: '已索赔', COUNTING: '盘点中', ADJUSTED: '已调账'
+  CONFIRMED: '已确认', CLAIMED: '已索赔', COUNTING: '追查中', ADJUSTED: '已调账',
+  CLOSED: '已关闭', PENDING_PM: '待PM审批'
 }
 export const STATUS_TONE = {
   DRAFT: 'gray', SUBMITTED: 'amber', ISSUED: 'green', REJECTED: 'red',
   CONFIRMED: 'green', CLAIMED: 'blue', COUNTING: 'amber', ADJUSTED: 'blue',
+  CLOSED: 'blue', PENDING_PM: 'red',
   PASSED: 'green', PENDING: 'amber', FAILED: 'red', CONDITIONAL: 'blue'
+}
+
+export const RESOLUTION_LABEL = {
+  OPEN: '未定性', SUPPLEMENTED: '已补录夜料', COMMON_LOSS: '公共损耗', MIXED: '部分补录+部分公共损耗'
+}
+export const CONCLUSION_LABEL = {
+  COMMON_LOSS: '项目公共损耗', CREW_NIGHT: '班组夜料补录', MIXED: '混合定性'
+}
+export const TRACE_TYPE = {
+  INBOUND: '入库核对', REQUISITION: '领用核对', RETURN: '退库核对',
+  WASTE: '破损登记核对', MONITOR: '监控交接',
+  COMMON_LOSS: '公共损耗定性', SUPPLEMENT: '夜料补录', PROGRESS: '进度确认', CLOSE: '关闭盘点'
+}
+export const TRACE_RESULT = {
+  MATCHED: '核对相符', SUSPECT: '发现疑点', CONFIRMED: '确认', INFO: '说明'
 }
 
 export const QC_LABEL = { PENDING: '待检', PASSED: '合格', FAILED: '不合格', CONDITIONAL: '让步接收' }

@@ -8,7 +8,6 @@ export default function Requisitions() {
   const user = getUser()
   const canCreate = ['ROLE_FOREMAN', 'ROLE_KEEPER', 'ROLE_PM'].includes(user.role)
   const canIssue = ['ROLE_KEEPER', 'ROLE_PM'].includes(user.role)
-
   const [rows, setRows] = useState([])
   const [status, setStatus] = useState('')
   const [crewFilter, setCrewFilter] = useState('')
@@ -69,6 +68,14 @@ export default function Requisitions() {
     } catch (e) { toast(e.message, 'err') }
   }
 
+  const doPmApprove = async (r) => {
+    if (!window.confirm(`批准受限班组「${r.crewName}」的领料单 ${r.code}？批准后仓管方可发料。`)) return
+    try {
+      await api.put(`/api/requisitions/${r.id}/pm-approve`, {})
+      toast('项目经理已批准，单据回到待发料队列'); load()
+    } catch (e) { toast(e.message, 'err') }
+  }
+
   const submitCreate = async () => {
     if (!form.crewId || !form.process) return toast('请选择班组并填写工序', 'err')
     if (form.items.some((i) => !i.materialId || !i.applyQty)) return toast('请完善领料明细', 'err')
@@ -104,6 +111,7 @@ export default function Requisitions() {
                   <select value={status} onChange={(e) => setStatus(e.target.value)}>
                     <option value="">全部</option>
                     <option value="SUBMITTED">待发料</option>
+                    <option value="PENDING_PM">待PM审批</option>
                     <option value="ISSUED">已发料</option>
                     <option value="REJECTED">已驳回</option>
                   </select>
@@ -127,7 +135,10 @@ export default function Requisitions() {
                 <td>{r.process}<div className="muted" style={{ fontSize: 12 }}>{r.drawingNo}</div></td>
                 <td>{r.items.map((i) => `${i.materialName}×${fmt(i.issuedQty || i.applyQty)}`).join('，')}</td>
                 <td className="num">{fmt(r.totalAmount)}</td>
-                <td>{r.urgent && <Badge status="SUBMITTED" label="夜间紧急" tone="red" />}</td>
+                <td><div className="btn-row" style={{ gap: 4 }}>
+                  {r.urgent && <Badge status="SUBMITTED" label={r.backdated ? '夜料补录' : '夜间紧急'} tone="red" />}
+                  {r.crewRestricted && <Badge status="PENDING_PM" label="班组受限" />}
+                </div></td>
                 <td><Badge status={r.status} /></td>
                 <td style={{ fontSize: 12 }}>{r.applicant}<div className="muted">{r.issuedBy || '—'}</div></td>
                 <td style={{ fontSize: 12 }}>{fmtTime(r.applyTime)}<div className="muted">{fmtTime(r.issueTime)}</div></td>
@@ -139,6 +150,12 @@ export default function Requisitions() {
                     </div>
                   )}
                   {r.status === 'SUBMITTED' && !canIssue && <span className="muted" style={{ fontSize: 12 }}>待仓管发料</span>}
+                  {r.status === 'PENDING_PM' && (user.role === 'ROLE_PM'
+                    ? <div className="btn-row">
+                        <button className="btn sm primary" onClick={() => doPmApprove(r)}>PM 批准</button>
+                        <button className="btn sm danger" onClick={() => doReject(r)}>驳回</button>
+                      </div>
+                    : <span className="muted" style={{ fontSize: 12 }}>盘点受限，待项目经理审批</span>)}
                   {r.status === 'ISSUED' && <button className="btn sm ghost" onClick={() => setDetail(r)}>查看</button>}
                   {r.status === 'REJECTED' && <span className="muted" style={{ fontSize: 12 }}>已驳回</span>}
                 </td>
@@ -217,7 +234,14 @@ export default function Requisitions() {
             {pre.requisition.crewName} · {pre.requisition.building} {pre.requisition.area} ·
             <b> {pre.requisition.process}</b> · 图纸 {pre.requisition.drawingNo || '—'}
             {pre.requisition.urgent && <span className="tag-mini" style={{ marginLeft: 8 }}>夜间紧急</span>}
+            {pre.crewRestricted && <span style={{ marginLeft: 8, color: '#c0392b' }}>该班组盘点夜料未登记，本单已由 PM 审批后方可发料</span>}
           </div>
+          {pre.checks.some((c) => c.frozenByCheck) && (
+            <div className="kpi-note" style={{ marginBottom: 10, borderColor: '#e74c3c', color: '#c0392b' }}>
+              ⚠ 存在处于盘点差异冻结期的材料（{pre.checks.filter((c) => c.frozenByCheck)
+                .map((c) => `${c.materialName}@${c.frozenByCheck}`).join('，')}），盘点关闭前无法发料。
+            </div>
+          )}
           <div className="table-scroll">
             <table className="tbl">
               <thead><tr>
@@ -288,6 +312,12 @@ export default function Requisitions() {
             </tbody>
           </table>
           <div className="right" style={{ marginTop: 10, fontWeight: 700 }}>合计：{fmt(detail.totalAmount)} 元</div>
+          {detail.backdated && <div className="kpi-note" style={{ marginTop: 8, borderColor: '#e74c3c', color: '#c0392b' }}>
+            盘点补录单（来源盘点单 #{detail.sourceCheckId}）：夜间未登记领料，实际领用时间 {fmtTime(detail.actualUseTime)}，金额已计入班组当月成本。
+          </div>}
+          {detail.pmApprovedBy && <div className="kpi-note" style={{ marginTop: 8 }}>
+            PM 审批：{detail.pmApprovedBy} · {fmtTime(detail.pmApproveTime)}
+          </div>}
           {detail.remark && <div className="kpi-note" style={{ marginTop: 8 }}>备注：{detail.remark}</div>}
         </Modal>
       )}

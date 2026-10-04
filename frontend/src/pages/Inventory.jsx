@@ -22,11 +22,11 @@ export default function Inventory() {
       <Stats items={[
         { label: '库存总价值', value: fmt(data?.totalStockValue), tone: 'brand' },
         { label: '库存预警材料', value: data?.lowStockCount ?? '—', tone: data?.lowStockCount ? 'red' : 'green' },
-        { label: '待质检批次', value: data?.pendingQcCount ?? '—', tone: data?.pendingQcCount ? 'red' : 'green' },
-        { label: '材料种类', value: data?.rows?.length ?? '—', tone: 'blue' }
+        { label: '盘点冻结材料', value: data?.frozenCount ?? '—', tone: data?.frozenCount ? 'red' : 'green' },
+        { label: '待质检批次', value: data?.pendingQcCount ?? '—', tone: data?.pendingQcCount ? 'red' : 'green' }
       ]} />
 
-      <Card title="现场库存总览" hint="库存=入库−已领+退库−损耗+盘点调整；不合格批次不计入可用量"
+      <Card title="现场库存总览" hint="库存=入库−已领+退库−损耗+盘点调整；不合格批次不计入可用量；盘点追查中的材料冻结领用"
             actions={
               <div className="filters">
                 <div className="f">
@@ -53,8 +53,10 @@ export default function Inventory() {
             </tr></thead>
             <tbody>
             {rows.map((r) => (
-              <tr key={r.materialId}>
-                <td><b>{r.materialName}</b></td>
+              <tr key={r.materialId} className={r.frozenByCheck ? 'row-frozen' : ''}>
+                <td><b>{r.materialName}</b>
+                  {r.frozenByCheck && <div style={{ marginTop: 2 }}><Badge status="PENDING" label={`盘点冻结·${r.frozenByCheck}`} tone="red" /></div>}
+                </td>
                 <td>{r.category}</td>
                 <td className="num">{fmt(r.onHand)} {r.unit}</td>
                 <td className="num"><b>{fmt(r.usableQty)}</b> {r.unit}</td>
@@ -64,9 +66,11 @@ export default function Inventory() {
                   <div className={r.lowStock ? 'bar red' : 'bar'}><i style={{ width: `${Math.max(2, r.stockValue / maxVal * 100)}%` }} /></div>
                 </td>
                 <td className="num">{fmt(r.stockValue)}</td>
-                <td>{r.lowStock
-                  ? <Badge status="PENDING" label="库存预警" tone="red" />
-                  : <Badge status="PASSED" label="正常" />}</td>
+                <td>{r.frozenByCheck
+                  ? <Badge status="FAILED" label="暂停领用" />
+                  : r.lowStock
+                    ? <Badge status="PENDING" label="库存预警" tone="red" />
+                    : <Badge status="PASSED" label="正常" />}</td>
               </tr>
             ))}
             </tbody>

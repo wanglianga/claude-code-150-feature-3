@@ -24,16 +24,19 @@ public class MasterDataService {
     private final CrewRepository crewRepo;
     private final MaterialBatchRepository batchRepo;
     private final ProjectBudgetRepository budgetRepo;
+    private final StockCheckService stockCheckService;
     private final CodeGenerator codes;
 
     public MasterDataService(MaterialRepository materialRepo, SupplierRepository supplierRepo,
                              CrewRepository crewRepo, MaterialBatchRepository batchRepo,
-                             ProjectBudgetRepository budgetRepo, CodeGenerator codes) {
+                             ProjectBudgetRepository budgetRepo, StockCheckService stockCheckService,
+                             CodeGenerator codes) {
         this.materialRepo = materialRepo;
         this.supplierRepo = supplierRepo;
         this.crewRepo = crewRepo;
         this.batchRepo = batchRepo;
         this.budgetRepo = budgetRepo;
+        this.stockCheckService = stockCheckService;
         this.codes = codes;
     }
 
@@ -79,6 +82,15 @@ public class MasterDataService {
         c.setLeader(req.leader());
         c.setTrade(req.trade());
         return crewRepo.save(c);
+    }
+
+    /** 解除盘点夜料未登记导致的领料加严限制（项目经理） */
+    @Transactional
+    public Crew releaseCrewRestriction(Long crewId) {
+        Crew c = crewRepo.findById(crewId).orElseThrow(() -> new BusinessException("班组不存在"));
+        c.setRequisitionRestricted(false);
+        c.setRestrictReason(null);
+        return c;
     }
 
     // ---------- 入库批次 / 质检 ----------
@@ -145,12 +157,13 @@ public class MasterDataService {
         return out;
     }
 
-    /** 库存总览：按材料汇总现场库存、批次明细、预警、质检待办 */
+    /** 库存总览：按材料汇总现场库存、批次明细、预警、质检待办、盘点冻结 */
     public Map<String, Object> inventory() {
         List<Material> mats = materialRepo.findAll();
         List<MaterialBatch> all = batchRepo.findAll();
         Map<Long, List<MaterialBatch>> byMaterial = all.stream()
                 .collect(Collectors.groupingBy(MaterialBatch::getMaterialId));
+        Map<Long, String> frozenCodes = stockCheckService.frozenCheckCodes();
         List<Map<String, Object>> rows = new ArrayList<>();
         double totalValue = 0d;
         int lowCount = 0;
@@ -178,11 +191,13 @@ public class MasterDataService {
             row.put("stockValue", round(value));
             row.put("batchCount", bs.size());
             row.put("pendingQc", bs.stream().filter(b -> "PENDING".equals(b.getQcStatus())).count());
+            row.put("frozenByCheck", frozenCodes.get(m.getId()));
             rows.add(row);
         }
         long pendingQc = all.stream().filter(b -> "PENDING".equals(b.getQcStatus())).count();
         return Map.of("rows", rows, "totalStockValue", round(totalValue),
-                "lowStockCount", lowCount, "pendingQcCount", pendingQc);
+                "lowStockCount", lowCount, "pendingQcCount", pendingQc,
+                "frozenCount", frozenCodes.size());
     }
 
     // ---------- 预算 ----------

@@ -104,4 +104,25 @@ public final class Requests {
     public record CrewRequest(@NotBlank String name, String leader, String trade) {}
 
     public record GenerateSettlementRequest(String period, Long crewId) {}
+
+    /** 盘点差异追查轨迹登记 */
+    public record TraceRequest(@NotBlank String traceType, String result, Long materialId,
+                        String refCode, @PositiveOrZero Double qty, String detail) {}
+
+    /** 盘亏定性为项目公共损耗（部分或全部） */
+    public record CommonLossRequest(@NotNull Long itemId,
+                             @NotNull @PositiveOrZero Double qty, String remark) {}
+
+    /** 盘亏定性为班组未登记夜间领料并补录（部分或全部） */
+    public record SupplementNightRequest(@NotNull Long itemId,
+                                  @NotNull Long crewId,
+                                  @NotBlank String building,
+                                  String area, String process, String drawingNo,
+                                  @NotNull @PositiveOrZero Double qty,
+                                  Long batchId, String actualTime, String remark) {}
+
+    /** 项目经理确认盘点差异对现场施工进度的影响 */
+    public record ProgressConfirmRequest(@NotBlank String impact, String remark) {
+        public boolean affects() { return "YES".equalsIgnoreCase(impact); }
+    }
 }

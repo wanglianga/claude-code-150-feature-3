@@ -26,12 +26,14 @@ public class DataInitializer implements CommandLineRunner {
     private final WasteRepository wasteRepo;
     private final ChangeVisaRepository visaRepo;
     private final StockCheckRepository checkRepo;
+    private final StockCheckTraceRepository traceRepo;
 
     public DataInitializer(UserRepository userRepo, CrewRepository crewRepo, SupplierRepository supplierRepo,
                            MaterialRepository materialRepo, MaterialBatchRepository batchRepo,
                            ProjectBudgetRepository budgetRepo, RequisitionRepository reqRepo,
                            MaterialReturnRepository returnRepo, WasteRepository wasteRepo,
-                           ChangeVisaRepository visaRepo, StockCheckRepository checkRepo) {
+                           ChangeVisaRepository visaRepo, StockCheckRepository checkRepo,
+                           StockCheckTraceRepository traceRepo) {
         this.userRepo = userRepo;
         this.crewRepo = crewRepo;
         this.supplierRepo = supplierRepo;
@@ -43,6 +45,7 @@ public class DataInitializer implements CommandLineRunner {
         this.wasteRepo = wasteRepo;
         this.visaRepo = visaRepo;
         this.checkRepo = checkRepo;
+        this.traceRepo = traceRepo;
     }
 
     @Override
@@ -235,7 +238,7 @@ public class DataInitializer implements CommandLineRunner {
         waste("SH20261002004", m3, b3, c4, "1#楼", "地下室", "防水工程", 10, 32,
                 "OTHER", "DESIGN", v1.getId(), "设计变更导致已铺卷材拆除损耗");
 
-        // ---------- 盘点（账实不符，待调账） ----------
+        // ---------- 盘点一：劳保/五金尾差（追查中，差异材料冻结） ----------
         StockCheck sc = new StockCheck();
         sc.setCode("PD20261003001");
         sc.setScope("1#楼现场仓库");
@@ -246,11 +249,55 @@ public class DataInitializer implements CommandLineRunner {
         checkItem(sc, m8, b8, 90, 88, 28, "CREW", "安全帽丢失 2 顶，班组照价赔偿");
         checkItem(sc, m7, b7, 4200, 4190, 1.2, "COMPANY", "尾差待查");
         checkRepo.save(sc);
+
+        // ---------- 盘点二：月底瓷砖账实差异 40 箱（本需求主场景，追查中） ----------
+        // 瓷砖批次 b4 账面 875 箱（1000-120-5），实盘 835 箱，盘亏 40 箱
+        StockCheck tc = new StockCheck();
+        tc.setCode("PD20261003002");
+        tc.setScope("1#楼现场仓库·瓷砖区");
+        tc.setStatus("COUNTING");
+        tc.setRecorder("周材料");
+        tc.setCreatedTime(t(10, 3, 9, 30));
+        tc.setRemark("月底盘点发现瓷砖实际少于系统库存 40 箱，按入库/领用/退库/破损/监控交接追查");
+        checkItem(tc, m4, b4, 875, 835, 58, "COMPANY",
+                "账面 875、实盘 835；监控指向 30 箱夜间未登记领料，余 10 箱待查");
+        checkRepo.save(tc);
+
+        trace(tc, "INBOUND", "MATCHED", m4, "RK20260929001", 1000d,
+                "入库单、供应商送货单与质检记录三方核对一致：1000 箱入库无误，排除入库少登。", t(10, 3, 10));
+        trace(tc, "REQUISITION", "SUSPECT", m4, "LL20261001004", 120d,
+                "有单领用 120 箱与发料记录一致；监控显示 10-02 23:40 另有约 30 箱瓷砖被瓷砖班夜间运出，系统无对应领料单。", t(10, 3, 10, 30));
+        trace(tc, "RETURN", "MATCHED", m4, "TK20261002003", 3d,
+                "损坏退回 3 箱按班组责任核销、不回补库存，口径与盘点一致，不构成账实差。", t(10, 3, 11));
+        trace(tc, "WASTE", "MATCHED", m4, "SH20261002001", 5d,
+                "切割/搬运破损 5 箱已登记损耗并核销批次，账实相符。", t(10, 3, 11, 30));
+        trace(tc, "MONITOR", "SUSPECT", m4, "门卫交接-1002", 30d,
+                "调阅 10-02 22:00 至次日 06:00 监控与门卫交接记录：瓷砖班陈海签字夜间运出瓷砖 30 箱用于标准层赶工，未补办领料；"
+                        + "其余 10 箱处于监控盲区，出入库与班组台账均无法定位责任。", t(10, 3, 14));
     }
 
     // ---------- helpers ----------
     private LocalDateTime t(int month, int day, int hour) {
         return LocalDateTime.of(2026, month, day, hour, 0);
+    }
+
+    private LocalDateTime t(int month, int day, int hour, int minute) {
+        return LocalDateTime.of(2026, month, day, hour, minute);
+    }
+
+    private void trace(StockCheck sc, String type, String result, Material m, String refCode,
+                       Double qty, String detail, LocalDateTime time) {
+        StockCheckTrace tr = new StockCheckTrace();
+        tr.setStockCheck(sc);
+        tr.setTraceType(type);
+        tr.setResult(result);
+        tr.setMaterialId(m == null ? null : m.getId());
+        tr.setRefCode(refCode);
+        tr.setQty(qty);
+        tr.setDetail(detail);
+        tr.setRecorder("周材料");
+        tr.setCreatedTime(time);
+        traceRepo.save(tr);
     }
 
     private Crew crew(String name, String leader, String trade) {

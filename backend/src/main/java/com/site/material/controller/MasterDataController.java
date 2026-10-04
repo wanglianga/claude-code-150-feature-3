@@ -56,6 +56,13 @@ public class MasterDataController {
         return service.createCrew(req);
     }
 
+    /** 解除盘点夜料未登记导致的班组领料加严限制 */
+    @PutMapping("/crews/{id}/release-restriction")
+    @PreAuthorize("hasRole('PM')")
+    public Object releaseCrewRestriction(@PathVariable Long id) {
+        return service.releaseCrewRestriction(id);
+    }
+
     // ---------- 入库批次 / 质检 ----------
     @GetMapping("/batches")
     public List<Map<String, Object>> batches(@RequestParam(required = false) Long materialId) {

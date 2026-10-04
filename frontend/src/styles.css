@@ -249,3 +249,13 @@ label.fdd span { display: block; font-size: 12.5px; color: var(--ink-2); margin-
 .flow-steps .step { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: var(--gray-bg); color: #64748b; }
 .flow-steps .step.on { background: var(--brand); color: #fff; font-weight: 600; }
 .flow-steps .arr { color: #cbd5e1; margin: 0 6px; }
+
+/* 盘点差异追查时间线 */
+.trace-list { display: flex; flex-direction: column; gap: 8px; max-height: 280px; overflow-y: auto; }
+.trace-item { border: 1px solid var(--line); border-left: 3px solid var(--green); border-radius: 8px; padding: 8px 10px; background: #fbfdfc; }
+.trace-item.suspect { border-left-color: var(--red); background: #fef7f7; }
+.trace-hd { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; flex-wrap: wrap; }
+.trace-bd { font-size: 12.5px; color: var(--ink); line-height: 1.7; }
+tr.row-frozen { background: #fef7f7; }
+tr.row-frozen:hover { background: #fdeeee; }
+textarea { width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font: inherit; resize: vertical; }

@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react'
-import { api } from '../api.js'
-import { Card, Field, useToast, useMeta } from '../ui.jsx'
+import { api, getUser } from '../api.js'
+import { Card, Field, Badge, useToast, useMeta } from '../ui.jsx'
 
 export default function MasterData() {
   const toast = useToast()
   const { meta, reload } = useMeta()
+  const user = getUser()
   const [tab, setTab] = useState('material')
   const [mForm, setMForm] = useState({ name: '', category: '钢筋辅材', spec: '', unit: '', safetyStock: 0 })
   const [sForm, setSForm] = useState({ name: '', contact: '', phone: '' })
@@ -31,6 +32,13 @@ export default function MasterData() {
     try {
       await api.post('/api/crews', cForm)
       toast('班组已新增'); setCForm({ name: '', leader: '', trade: '' }); reload()
+    } catch (e) { toast(e.message, 'err') }
+  }
+  const releaseRestriction = async (c) => {
+    if (!window.confirm(`确认解除「${c.name}」的领料加严限制？解除后该班组领料恢复正常流程。`)) return
+    try {
+      await api.put(`/api/crews/${c.id}/release-restriction`, {})
+      toast('已解除该班组的领料限制'); reload()
     } catch (e) { toast(e.message, 'err') }
   }
 
@@ -104,9 +112,24 @@ export default function MasterData() {
           <Card title={`班组（${meta.crews.length}）`} flush>
             <div className="table-scroll">
               <table className="tbl">
-                <thead><tr><th>班组</th><th>班组长</th><th>工种</th></tr></thead>
+                <thead><tr><th>班组</th><th>班组长</th><th>工种</th><th>领料权限</th></tr></thead>
                 <tbody>{meta.crews.map((c) => (
-                  <tr key={c.id}><td><b>{c.name}</b></td><td>{c.leader}</td><td>{c.trade}</td></tr>
+                  <tr key={c.id}>
+                    <td><b>{c.name}</b></td>
+                    <td>{c.leader}</td>
+                    <td>{c.trade}</td>
+                    <td>
+                      {c.requisitionRestricted
+                        ? <div>
+                            <Badge status="PENDING_PM" label="加严审批（PM逐单批准）" />
+                            <div className="muted" style={{ fontSize: 12 }}>{c.restrictReason}</div>
+                            {user.role === 'ROLE_PM' && (
+                              <button className="btn sm ghost" style={{ marginTop: 4 }} onClick={() => releaseRestriction(c)}>解除限制</button>
+                            )}
+                          </div>
+                        : <Badge status="PASSED" label="正常" />}
+                    </td>
+                  </tr>
                 ))}</tbody>
               </table>
             </div>

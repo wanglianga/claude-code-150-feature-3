@@ -55,4 +55,11 @@ public class RequisitionController {
     public Object reject(@PathVariable Long id, @RequestBody(required = false) Map<String, String> body) {
         return service.reject(id, body == null ? null : body.get("remark"));
     }
+
+    /** 受限班组（盘点夜料未登记）的领料单须项目经理逐单审批 */
+    @PutMapping("/{id}/pm-approve")
+    @PreAuthorize("hasRole('PM')")
+    public Object pmApprove(@PathVariable Long id, @RequestBody(required = false) Map<String, String> body) {
+        return service.approve(id, body == null ? null : body.get("remark"));
+    }
 }
