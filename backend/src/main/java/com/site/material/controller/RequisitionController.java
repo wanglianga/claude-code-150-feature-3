@@ -50,6 +50,13 @@ public class RequisitionController {
         return service.issue(id, req);
     }
 
+    /** 项目经理审批：受限班组领料申请通过后进入待发料 */
+    @PutMapping("/{id}/approve")
+    @PreAuthorize("hasRole('PM')")
+    public Requisition approve(@PathVariable Long id) {
+        return service.approve(id);
+    }
+
     @PutMapping("/{id}/reject")
     @PreAuthorize("hasAnyRole('KEEPER','PM')")
     public Object reject(@PathVariable Long id, @RequestBody(required = false) Map<String, String> body) {

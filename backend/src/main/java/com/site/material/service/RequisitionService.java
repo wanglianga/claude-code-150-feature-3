@@ -25,16 +25,19 @@ public class RequisitionService {
     private final ProjectBudgetRepository budgetRepo;
     private final MaterialRepository materialRepo;
     private final CrewRepository crewRepo;
+    private final StockCheckRepository checkRepo;
     private final CodeGenerator codes;
 
     public RequisitionService(RequisitionRepository reqRepo, MaterialBatchRepository batchRepo,
                               ProjectBudgetRepository budgetRepo, MaterialRepository materialRepo,
-                              CrewRepository crewRepo, CodeGenerator codes) {
+                              CrewRepository crewRepo, StockCheckRepository checkRepo,
+                              CodeGenerator codes) {
         this.reqRepo = reqRepo;
         this.batchRepo = batchRepo;
         this.budgetRepo = budgetRepo;
         this.materialRepo = materialRepo;
         this.crewRepo = crewRepo;
+        this.checkRepo = checkRepo;
         this.codes = codes;
     }
 
@@ -43,7 +46,7 @@ public class RequisitionService {
         if (req.items() == null || req.items().isEmpty()) {
             throw new BusinessException("领料明细不能为空");
         }
-        crewRepo.findById(req.crewId()).orElseThrow(() -> new BusinessException("班组不存在"));
+        Crew crew = crewRepo.findById(req.crewId()).orElseThrow(() -> new BusinessException("班组不存在"));
         Requisition r = new Requisition();
         r.setCode(codes.next("LL"));
         r.setCrewId(req.crewId());
@@ -55,7 +58,8 @@ public class RequisitionService {
         r.setRemark(req.remark());
         r.setApplicant(SecurityUtil.currentName());
         r.setApplyTime(LocalDateTime.now());
-        r.setStatus("SUBMITTED"); // 班组申请即提交
+        // 被盘点补录限制的班组：领料需项目经理审批后方可发料
+        r.setStatus(crew.isRequisitionRestricted() ? "PENDING_PM" : "SUBMITTED");
         for (ItemIn it : req.items()) {
             RequisitionItem item = new RequisitionItem();
             item.setRequisition(r);
@@ -71,6 +75,7 @@ public class RequisitionService {
         Requisition r = reqRepo.findByIdWithItems(id).orElseThrow(() -> new BusinessException("领料单不存在"));
         Map<Long, Material> mats = materialRepo.findAll().stream()
                 .collect(Collectors.toMap(Material::getId, Function.identity()));
+        Map<Long, String> restricted = restrictedMaterials();
         List<Map<String, Object>> rows = new ArrayList<>();
         for (RequisitionItem it : r.getItems()) {
             Material m = mats.get(it.getMaterialId());
@@ -96,6 +101,9 @@ public class RequisitionService {
             row.put("onHandQty", MasterDataService.round(onHand));
             row.put("stockEnough", onHand + 1e-9 >= it.getApplyQty());
             row.put("overBudget", budgetQty > 0 && alreadyIssued + it.getApplyQty() > budgetQty + 1e-9);
+            row.put("restricted", restricted.containsKey(it.getMaterialId()));
+            row.put("restrictReason", restricted.containsKey(it.getMaterialId())
+                    ? "盘点单 " + restricted.get(it.getMaterialId()) + " 差异未关闭，限制继续领用" : null);
             row.put("batches", batches.stream().map(b -> Map.of(
                     "batchId", b.getId(), "batchNo", b.getBatchNo(),
                     "onHand", b.onHand(), "unitPrice", b.getUnitPrice(),
@@ -128,9 +136,14 @@ public class RequisitionService {
         }
         Map<Long, IssueItemIn> input = req.items().stream()
                 .collect(Collectors.toMap(IssueItemIn::itemId, Function.identity()));
+        Map<Long, String> restricted = restrictedMaterials();
         List<String> warnings = new ArrayList<>();
 
         for (RequisitionItem item : r.getItems()) {
+            if (restricted.containsKey(item.getMaterialId())) {
+                throw new BusinessException("材料存在未关闭的盘点差异（盘点单 "
+                        + restricted.get(item.getMaterialId()) + "），差异关闭前限制继续领用");
+            }
             IssueItemIn in = input.get(item.getId());
             if (in == null || in.issuedQty() == null || in.issuedQty() <= 0) {
                 throw new BusinessException("明细 " + item.getId() + " 未填写实发数量");
@@ -179,15 +192,35 @@ public class RequisitionService {
         return out;
     }
 
+    /** 项目经理审批：受限班组的领料申请通过后进入待发料 */
+    @Transactional
+    public Requisition approve(Long id) {
+        Requisition r = reqRepo.findByIdWithItems(id).orElseThrow(() -> new BusinessException("领料单不存在"));
+        if (!"PENDING_PM".equals(r.getStatus())) {
+            throw new BusinessException("仅待项目经理审批的单据可执行审批，当前状态: " + r.getStatus());
+        }
+        r.setStatus("SUBMITTED");
+        return reqRepo.save(r);
+    }
+
     @Transactional
     public Requisition reject(Long id, String remark) {
         Requisition r = reqRepo.findByIdWithItems(id).orElseThrow(() -> new BusinessException("领料单不存在"));
-        if (!"SUBMITTED".equals(r.getStatus())) {
-            throw new BusinessException("仅待发料单据可驳回");
+        if (!"SUBMITTED".equals(r.getStatus()) && !"PENDING_PM".equals(r.getStatus())) {
+            throw new BusinessException("仅待发料/待审批单据可驳回");
         }
         r.setStatus("REJECTED");
         r.setRemark(remark);
         return r;
+    }
+
+    /** 未关闭盘点差异涉及的材料（materialId -> 盘点单号） */
+    private Map<Long, String> restrictedMaterials() {
+        Map<Long, String> out = new HashMap<>();
+        for (Object[] row : checkRepo.findOpenLossMaterials()) {
+            out.put((Long) row[0], (String) row[1]);
+        }
+        return out;
     }
 
     public List<Map<String, Object>> list(String status, Long crewId) {
@@ -241,6 +274,7 @@ public class RequisitionService {
         m.put("drawingNo", r.getDrawingNo());
         m.put("status", r.getStatus());
         m.put("urgent", r.isUrgent());
+        m.put("backfill", r.isBackfill());
         m.put("applicant", r.getApplicant());
         m.put("issuedBy", r.getIssuedBy());
         m.put("confirmedBy", r.getConfirmedBy());

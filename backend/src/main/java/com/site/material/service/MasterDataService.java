@@ -81,6 +81,17 @@ public class MasterDataService {
         return crewRepo.save(c);
     }
 
+    /** 设置/解除班组领料审批限制（盘点补录触发，项目经理核实后可解除） */
+    @Transactional
+    public Crew updateCrewRestriction(Long id, CrewRestrictionRequest req) {
+        Crew c = crewRepo.findById(id).orElseThrow(() -> new BusinessException("班组不存在"));
+        c.setRequisitionRestricted(Boolean.TRUE.equals(req.restricted()));
+        c.setRestrictReason(Boolean.TRUE.equals(req.restricted())
+                ? (req.reason() == null || req.reason().isBlank() ? "领料需项目经理审批" : req.reason())
+                : null);
+        return crewRepo.save(c);
+    }
+
     // ---------- 入库批次 / 质检 ----------
     @Transactional
     public MaterialBatch inbound(InboundRequest req) {

@@ -24,7 +24,7 @@ const NAV = [
   { group: '仓储管理' },
   { path: '/inventory', label: '现场库存总览', icon: '📦', roles: ['*'], el: <InventoryPage /> },
   { path: '/batches', label: '入库批次与质检', icon: '🧾', roles: ['ROLE_PM', 'ROLE_KEEPER'], el: <BatchesPage /> },
-  { path: '/stock-checks', label: '盘点与账实调整', icon: '🔍', roles: ['ROLE_PM', 'ROLE_KEEPER'], el: <StockChecksPage /> },
+  { path: '/stock-checks', label: '盘点与差异追查', icon: '🔍', roles: ['ROLE_PM', 'ROLE_KEEPER'], el: <StockChecksPage /> },
   { path: '/master', label: '材料/供应商/班组', icon: '🗂️', roles: ['ROLE_PM', 'ROLE_KEEPER'], el: <MasterDataPage /> },
   { group: '业务单据' },
   { path: '/requisitions', label: '领料单', icon: '📝', roles: ['*'], el: <RequisitionsPage /> },

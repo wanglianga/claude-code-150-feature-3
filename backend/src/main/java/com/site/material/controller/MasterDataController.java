@@ -56,6 +56,14 @@ public class MasterDataController {
         return service.createCrew(req);
     }
 
+    /** 设置/解除班组领料审批限制 */
+    @PutMapping("/crews/{id}/restriction")
+    @PreAuthorize("hasRole('PM')")
+    public Object updateCrewRestriction(@PathVariable Long id,
+                                        @Valid @RequestBody CrewRestrictionRequest req) {
+        return service.updateCrewRestriction(id, req);
+    }
+
     // ---------- 入库批次 / 质检 ----------
     @GetMapping("/batches")
     public List<Map<String, Object>> batches(@RequestParam(required = false) Long materialId) {

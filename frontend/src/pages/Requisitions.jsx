@@ -49,6 +49,8 @@ export default function Requisitions() {
   }
 
   const doIssue = async () => {
+    const blocked = pre?.checks?.find((c) => c.restricted)
+    if (blocked) return toast(`${blocked.materialName}：${blocked.restrictReason}`, 'err')
     try {
       const items = Object.entries(issueRows).map(([itemId, v]) => ({
         itemId: Number(itemId), batchId: Number(v.batchId), issuedQty: Number(v.issuedQty)
@@ -58,6 +60,13 @@ export default function Requisitions() {
       toast('发料成功，班组长已确认领用')
       if (res.warnings?.length) res.warnings.forEach((w) => toast(w, 'info'))
       setPre(null); load()
+    } catch (e) { toast(e.message, 'err') }
+  }
+
+  const doApprove = async (r) => {
+    try {
+      await api.put(`/api/requisitions/${r.id}/approve`, {})
+      toast('已审批通过，进入待发料'); load()
     } catch (e) { toast(e.message, 'err') }
   }
 
@@ -73,17 +82,21 @@ export default function Requisitions() {
     if (!form.crewId || !form.process) return toast('请选择班组并填写工序', 'err')
     if (form.items.some((i) => !i.materialId || !i.applyQty)) return toast('请完善领料明细', 'err')
     try {
-      await api.post('/api/requisitions', {
+      const saved = await api.post('/api/requisitions', {
         ...form,
         crewId: Number(form.crewId),
         items: form.items.map((i) => ({ materialId: Number(i.materialId), applyQty: Number(i.applyQty) }))
       })
-      toast('领料申请已提交')
+      toast(saved.status === 'PENDING_PM'
+        ? '该班组处于领料限制期，申请已提交，需项目经理审批' : '领料申请已提交')
       setShowCreate(false)
       setForm({ ...form, items: [blankItem()] })
       load()
     } catch (e) { toast(e.message, 'err') }
   }
+
+  // 当前登录班组长所属班组的限制状态
+  const myCrew = user.role === 'ROLE_FOREMAN' ? meta.crews.find((c) => c.id === user.crewId) : null
 
   return (
     <div>
@@ -104,6 +117,7 @@ export default function Requisitions() {
                   <select value={status} onChange={(e) => setStatus(e.target.value)}>
                     <option value="">全部</option>
                     <option value="SUBMITTED">待发料</option>
+                    <option value="PENDING_PM">待项目经理审批</option>
                     <option value="ISSUED">已发料</option>
                     <option value="REJECTED">已驳回</option>
                   </select>
@@ -127,7 +141,10 @@ export default function Requisitions() {
                 <td>{r.process}<div className="muted" style={{ fontSize: 12 }}>{r.drawingNo}</div></td>
                 <td>{r.items.map((i) => `${i.materialName}×${fmt(i.issuedQty || i.applyQty)}`).join('，')}</td>
                 <td className="num">{fmt(r.totalAmount)}</td>
-                <td>{r.urgent && <Badge status="SUBMITTED" label="夜间紧急" tone="red" />}</td>
+                <td>
+                  {r.urgent && <Badge status="SUBMITTED" label="夜间紧急" tone="red" />}
+                  {r.backfill && <Badge status="CLAIMED" label="盘点补录" />}
+                </td>
                 <td><Badge status={r.status} /></td>
                 <td style={{ fontSize: 12 }}>{r.applicant}<div className="muted">{r.issuedBy || '—'}</div></td>
                 <td style={{ fontSize: 12 }}>{fmtTime(r.applyTime)}<div className="muted">{fmtTime(r.issueTime)}</div></td>
@@ -139,6 +156,15 @@ export default function Requisitions() {
                     </div>
                   )}
                   {r.status === 'SUBMITTED' && !canIssue && <span className="muted" style={{ fontSize: 12 }}>待仓管发料</span>}
+                  {r.status === 'PENDING_PM' && user.role === 'ROLE_PM' && (
+                    <div className="btn-row">
+                      <button className="btn sm primary" onClick={() => doApprove(r)}>审批通过</button>
+                      <button className="btn sm danger" onClick={() => doReject(r)}>驳回</button>
+                    </div>
+                  )}
+                  {r.status === 'PENDING_PM' && user.role !== 'ROLE_PM' && (
+                    <span className="muted" style={{ fontSize: 12 }}>班组受限 · 待项目经理审批</span>
+                  )}
                   {r.status === 'ISSUED' && <button className="btn sm ghost" onClick={() => setDetail(r)}>查看</button>}
                   {r.status === 'REJECTED' && <span className="muted" style={{ fontSize: 12 }}>已驳回</span>}
                 </td>
@@ -154,6 +180,11 @@ export default function Requisitions() {
         <Modal title="班组领料申请" wide onClose={() => setShowCreate(false)}
                footer={<><button className="btn" onClick={() => setShowCreate(false)}>取消</button>
                  <button className="btn primary" onClick={submitCreate}>提交申请</button></>}>
+          {myCrew?.requisitionRestricted && (
+            <div className="kpi-note neg" style={{ marginBottom: 10 }}>
+              本班组处于领料限制期（{myCrew.restrictReason || '盘点补录触发'}），本次申请需项目经理审批后方可发料。
+            </div>
+          )}
           <div className="grid3">
             <Field label="班组 *">
               <select value={form.crewId} disabled={user.role === 'ROLE_FOREMAN'}
@@ -234,8 +265,11 @@ export default function Requisitions() {
                   <td className="num">{fmt(c.alreadyIssued)}</td>
                   <td className="num">{fmt(c.onHandQty)}</td>
                   <td>
-                    {!c.stockEnough ? <Badge status="FAILED" label="库存不足" /> : <Badge status="PASSED" label="库存充足" />}
+                    {c.restricted
+                      ? <Badge status="FAILED" label="盘点差异未关闭·限制领用" />
+                      : (!c.stockEnough ? <Badge status="FAILED" label="库存不足" /> : <Badge status="PASSED" label="库存充足" />)}
                     {c.overBudget && <div style={{ marginTop: 4 }}><Badge status="SUBMITTED" label="超预算" tone="red" /></div>}
+                    {c.restricted && <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{c.restrictReason}</div>}
                   </td>
                   <td style={{ minWidth: 200 }}>
                     <select value={issueRows[c.itemId]?.batchId || ''}
@@ -257,7 +291,7 @@ export default function Requisitions() {
           </div>
           <div className="kpi-note" style={{ marginTop: 10 }}>
             核对口径：施工进度（楼栋/工序/图纸）→ 预算量 → 该班组已领量 → 现场库存与批次质检状态；
-            不合格/待检批次不参与发料；超预算时非紧急单将给出预警。
+            不合格/待检批次不参与发料；超预算时非紧急单将给出预警；盘点差异未关闭的材料限制发料。
           </div>
         </Modal>
       )}
@@ -270,6 +304,7 @@ export default function Requisitions() {
             {detail.crewName} · {detail.building} {detail.area} · {detail.process} · {detail.drawingNo}<br/>
             状态：<Badge status={detail.status} />　申请人：{detail.applicant}　仓管：{detail.issuedBy || '—'}　班长确认：{detail.confirmedBy || '—'}
             {detail.urgent && <span className="tag-mini" style={{ marginLeft: 8 }}>夜间紧急</span>}
+            {detail.backfill && <span className="tag-mini" style={{ marginLeft: 8 }}>盘点补录</span>}
           </div>
           <table className="tbl">
             <thead><tr><th>材料</th><th className="num">申请量</th><th>批次</th><th className="num">实发量</th>

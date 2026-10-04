@@ -249,3 +249,7 @@ label.fdd span { display: block; font-size: 12.5px; color: var(--ink-2); margin-
 .flow-steps .step { font-size: 12px; padding: 3px 10px; border-radius: 999px; background: var(--gray-bg); color: #64748b; }
 .flow-steps .step.on { background: var(--brand); color: #fff; font-weight: 600; }
 .flow-steps .arr { color: #cbd5e1; margin: 0 6px; }
+
+/* 盘点差异追查工作台 */
+.sect-title { font-size: 13px; font-weight: 700; color: var(--ink-2); margin: 12px 0 6px; }
+.stat.tone-amber .val { color: #d97706; }

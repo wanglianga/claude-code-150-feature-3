@@ -22,4 +22,11 @@ public class Crew {
     /** 工种：钢筋班 / 泥工班 / 防水班 / 水电班 / 安装班 */
     @Column(length = 64)
     private String trade;
+
+    /** 领料审批限制：盘点补录未登记领料后触发，限制期间领料需项目经理审批 */
+    @Column(nullable = false)
+    private boolean requisitionRestricted = false;
+
+    @Column(length = 256)
+    private String restrictReason;
 }

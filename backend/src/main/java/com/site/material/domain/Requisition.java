@@ -40,11 +40,15 @@ public class Requisition {
     @Column(length = 64)
     private String drawingNo;
 
-    /** DRAFT / SUBMITTED / ISSUED / REJECTED */
+    /** DRAFT / SUBMITTED / PENDING_PM(受限班组待项目经理审批) / ISSUED / REJECTED */
     @Column(nullable = false, length = 16)
     private String status = "DRAFT";
 
     private boolean urgent = false;
+
+    /** 盘点补录单：追查发现班组未登记领料（如夜间领料）时由平台补录 */
+    @Column(nullable = false)
+    private boolean backfill = false;
 
     private String applicant;
 

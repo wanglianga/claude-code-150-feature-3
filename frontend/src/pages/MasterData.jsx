@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react'
-import { api } from '../api.js'
-import { Card, Field, useToast, useMeta } from '../ui.jsx'
+import { api, getUser } from '../api.js'
+import { Card, Field, Badge, useToast, useMeta } from '../ui.jsx'
 
 export default function MasterData() {
   const toast = useToast()
   const { meta, reload } = useMeta()
+  const user = getUser()
+  const isPM = user.role === 'ROLE_PM'
   const [tab, setTab] = useState('material')
   const [mForm, setMForm] = useState({ name: '', category: '钢筋辅材', spec: '', unit: '', safetyStock: 0 })
   const [sForm, setSForm] = useState({ name: '', contact: '', phone: '' })
@@ -31,6 +33,13 @@ export default function MasterData() {
     try {
       await api.post('/api/crews', cForm)
       toast('班组已新增'); setCForm({ name: '', leader: '', trade: '' }); reload()
+    } catch (e) { toast(e.message, 'err') }
+  }
+  const liftRestriction = async (c) => {
+    if (!window.confirm(`确认解除 ${c.name} 的领料审批限制？解除后该班组领料恢复直接发料。`)) return
+    try {
+      await api.put(`/api/crews/${c.id}/restriction`, { restricted: false })
+      toast('已解除限制'); reload()
     } catch (e) { toast(e.message, 'err') }
   }
 
@@ -101,12 +110,27 @@ export default function MasterData() {
             <Field label="工种"><input value={cForm.trade} onChange={(e) => setCForm({ ...cForm, trade: e.target.value })} /></Field>
             <button className="btn primary" onClick={addCrew}>新增班组</button>
           </Card>
-          <Card title={`班组（${meta.crews.length}）`} flush>
+          <Card title={`班组（${meta.crews.length}）`} hint="盘点补录未登记领料的班组会被限制：领料需项目经理审批" flush>
             <div className="table-scroll">
               <table className="tbl">
-                <thead><tr><th>班组</th><th>班组长</th><th>工种</th></tr></thead>
+                <thead><tr><th>班组</th><th>班组长</th><th>工种</th><th>领料限制</th><th>操作</th></tr></thead>
                 <tbody>{meta.crews.map((c) => (
-                  <tr key={c.id}><td><b>{c.name}</b></td><td>{c.leader}</td><td>{c.trade}</td></tr>
+                  <tr key={c.id}>
+                    <td><b>{c.name}</b></td>
+                    <td>{c.leader}</td>
+                    <td>{c.trade}</td>
+                    <td>
+                      {c.requisitionRestricted
+                        ? <><Badge status="FAILED" label="限制中·需PM审批" />
+                            <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>{c.restrictReason}</div></>
+                        : <Badge status="PASSED" label="正常" />}
+                    </td>
+                    <td>
+                      {c.requisitionRestricted && isPM && (
+                        <button className="btn sm primary" onClick={() => liftRestriction(c)}>解除限制</button>
+                      )}
+                    </td>
+                  </tr>
                 ))}</tbody>
               </table>
             </div>

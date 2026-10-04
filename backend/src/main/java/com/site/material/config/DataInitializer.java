@@ -26,12 +26,14 @@ public class DataInitializer implements CommandLineRunner {
     private final WasteRepository wasteRepo;
     private final ChangeVisaRepository visaRepo;
     private final StockCheckRepository checkRepo;
+    private final HandoverRecordRepository handoverRepo;
 
     public DataInitializer(UserRepository userRepo, CrewRepository crewRepo, SupplierRepository supplierRepo,
                            MaterialRepository materialRepo, MaterialBatchRepository batchRepo,
                            ProjectBudgetRepository budgetRepo, RequisitionRepository reqRepo,
                            MaterialReturnRepository returnRepo, WasteRepository wasteRepo,
-                           ChangeVisaRepository visaRepo, StockCheckRepository checkRepo) {
+                           ChangeVisaRepository visaRepo, StockCheckRepository checkRepo,
+                           HandoverRecordRepository handoverRepo) {
         this.userRepo = userRepo;
         this.crewRepo = crewRepo;
         this.supplierRepo = supplierRepo;
@@ -43,6 +45,7 @@ public class DataInitializer implements CommandLineRunner {
         this.wasteRepo = wasteRepo;
         this.visaRepo = visaRepo;
         this.checkRepo = checkRepo;
+        this.handoverRepo = handoverRepo;
     }
 
     @Override
@@ -227,25 +230,62 @@ public class DataInitializer implements CommandLineRunner {
 
         // ---------- 损耗 ----------
         waste("SH20261002001", m4, b4, c3, "1#楼", "标准层", "墙地砖铺贴", 5, 58,
-                "BREAKAGE", "CREW", null, "切割/搬运破损 5 箱");
+                "BREAKAGE", "CREW", null, "切割/搬运破损 5 箱", t(10, 2, 16));
         waste("SH20261002002", m5, b5, c2, "1#楼", "标准层", "砌筑抹灰", 0.5, 380,
-                "EXPIRED", "CREW", null, "现场堆放超期结块报废，保管不当");
+                "EXPIRED", "CREW", null, "现场堆放超期结块报废，保管不当", t(10, 2, 16));
         waste("SH20261002003", m3, b3b, c4, "1#楼", "地下室", "防水工程", 30, 32,
-                "QUALITY", "SUPPLIER", null, "补货批次厚度不达标，清退出场并向供应商索赔");
+                "QUALITY", "SUPPLIER", null, "补货批次厚度不达标，清退出场并向供应商索赔", t(10, 2, 16));
         waste("SH20261002004", m3, b3, c4, "1#楼", "地下室", "防水工程", 10, 32,
-                "OTHER", "DESIGN", v1.getId(), "设计变更导致已铺卷材拆除损耗");
+                "OTHER", "DESIGN", v1.getId(), "设计变更导致已铺卷材拆除损耗", t(10, 2, 16));
 
-        // ---------- 盘点（账实不符，待调账） ----------
-        StockCheck sc = new StockCheck();
-        sc.setCode("PD20261003001");
-        sc.setScope("1#楼现场仓库");
-        sc.setStatus("COUNTING");
-        sc.setRecorder("周材料");
-        sc.setCreatedTime(t(10, 3, 9));
-        sc.setRemark("月度盘点发现劳保用品与五金账实不符");
-        checkItem(sc, m8, b8, 90, 88, 28, "CREW", "安全帽丢失 2 顶，班组照价赔偿");
-        checkItem(sc, m7, b7, 4200, 4190, 1.2, "COMPANY", "尾差待查");
-        checkRepo.save(sc);
+        // ---------- 盘点一（历史，已关闭）：劳保/五金尾差无法定位，转项目公共损耗 ----------
+        StockCheck sc0 = new StockCheck();
+        sc0.setCode("PD20261003001");
+        sc0.setScope("1#楼现场仓库");
+        sc0.setStatus("CLOSED");
+        sc0.setRecorder("周材料");
+        sc0.setConfirmer("周材料");
+        sc0.setCreatedTime(t(10, 3, 9));
+        sc0.setAdjustTime(t(10, 3, 10));
+        sc0.setImpactLevel("NONE");
+        sc0.setImpactNote("差异金额小，不影响现场施工进度");
+        sc0.setImpactConfirmer("张项目");
+        sc0.setImpactConfirmTime(t(10, 3, 10));
+        sc0.setRemark("月度盘点发现劳保用品与五金账实不符，无法定位责任，差异转入项目公共损耗");
+        checkItem(sc0, m8, b8, 90, 88, 28, "COMPANY", "安全帽丢失 2 顶，无法定位责任人", 0, 2);
+        checkItem(sc0, m7, b7, 4200, 4190, 1.2, "COMPANY", "膨胀螺栓尾差 10 套，无法定位", 0, 10);
+        checkRepo.save(sc0);
+        // 关闭调账后的批次账面（账 = 实）
+        b8.setQtyAdjust(b8.getQtyAdjust() - 2);
+        b7.setQtyAdjust(b7.getQtyAdjust() - 10);
+        batchRepo.save(b8);
+        batchRepo.save(b7);
+        // 公共损耗台账留痕（库存已在盘点调账中核销，这里不再重复扣减批次）
+        waste("SH20261003001", m8, b8, null, "1#楼", null, null, 2, 28,
+                "OTHER", "COMPANY", null, "盘点差异无法定位责任，转入项目公共损耗（盘点单 PD20261003001）", t(10, 3, 10));
+        waste("SH20261003002", m7, b7, null, "1#楼", null, null, 10, 1.2,
+                "OTHER", "COMPANY", null, "盘点差异无法定位责任，转入项目公共损耗（盘点单 PD20261003001）", t(10, 3, 10));
+
+        // ---------- 盘点二（月底，追查中）：防滑地砖实盘短缺 20 箱 ----------
+        StockCheck sc1 = new StockCheck();
+        sc1.setCode("PD20261004001");
+        sc1.setScope("1#楼现场仓库");
+        sc1.setStatus("COUNTING");
+        sc1.setRecorder("周材料");
+        sc1.setCreatedTime(t(10, 4, 9));
+        sc1.setRemark("月底盘点：防滑地砖账实不符，差异追查中；关闭前该材料限制继续领用");
+        checkItem(sc1, m4, b4, 875, 855, 58, "COMPANY", "实盘短缺 20 箱，原因待查", 0, 0);
+        checkRepo.save(sc1);
+
+        // ---------- 监控交接记录（差异追查线索） ----------
+        handover(t(10, 3, 22), "周材料", "钱守夜", "B库-东门 CAM-02 22:05-22:20",
+                "22:10 水电班孙明夜间紧急领用 PVC穿线管 600 米，已按夜间紧急流程登记领料单 LL20261003011",
+                c5, m6);
+        handover(t(10, 4, 8), "钱守夜", "周材料", "A库-西门 CAM-03 23:36-23:52",
+                "监控回放显示 10-03 夜间瓷砖班陈海从 A 库领走防滑地砖约 12 箱，现场未见领料登记，待核实补录",
+                c3, m4);
+        handover(t(10, 4, 8), "周材料", "钱守夜", null,
+                "早班交接：库房门窗完好，叉车充电正常，其余出入库无异常", null, null);
     }
 
     // ---------- helpers ----------
@@ -393,12 +433,12 @@ public class DataInitializer implements CommandLineRunner {
 
     private void waste(String code, Material m, MaterialBatch b, Crew crew, String building,
                        String area, String process, double qty, double price, String type,
-                       String resp, Long visaId, String desc) {
+                       String resp, Long visaId, String desc, LocalDateTime createdTime) {
         WasteRecord w = new WasteRecord();
         w.setCode(code);
         w.setMaterialId(m.getId());
         w.setBatchId(b.getId());
-        w.setCrewId(crew.getId());
+        w.setCrewId(crew == null ? null : crew.getId());
         w.setBuilding(building);
         w.setArea(area);
         w.setProcess(process);
@@ -409,12 +449,27 @@ public class DataInitializer implements CommandLineRunner {
         w.setVisaId(visaId);
         w.setDescription(desc);
         w.setRecorder("周材料");
-        w.setCreatedTime(t(10, 2, 16));
+        w.setCreatedTime(createdTime);
         wasteRepo.save(w);
     }
 
+    private void handover(LocalDateTime time, String from, String to, String cctv,
+                          String note, Crew crew, Material m) {
+        HandoverRecord h = new HandoverRecord();
+        h.setHandoverTime(time);
+        h.setFromKeeper(from);
+        h.setToKeeper(to);
+        h.setCctvRef(cctv);
+        h.setNote(note);
+        h.setRelatedCrewId(crew == null ? null : crew.getId());
+        h.setRelatedMaterialId(m == null ? null : m.getId());
+        h.setRecorder("周材料");
+        h.setCreatedTime(time);
+        handoverRepo.save(h);
+    }
+
     private void checkItem(StockCheck sc, Material m, MaterialBatch b, double book, double actual,
-                           double price, String resp, String remark) {
+                           double price, String resp, String remark, double backfill, double commonLoss) {
         StockCheckItem i = new StockCheckItem();
         i.setStockCheck(sc);
         i.setMaterialId(m.getId());
@@ -423,6 +478,8 @@ public class DataInitializer implements CommandLineRunner {
         i.setActualQty(actual);
         i.setUnitPrice(price);
         i.setResponsibility(resp);
+        i.setBackfillQty(backfill);
+        i.setCommonLossQty(commonLoss);
         i.setRemark(remark);
         sc.getItems().add(i);
     }

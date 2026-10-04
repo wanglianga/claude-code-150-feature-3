@@ -34,7 +34,7 @@ export default function Dashboard() {
             hint="从采购入库到班组核算，所有单据通过楼栋/工序/班组/材料串接">
         <div className="flow-steps" style={{ fontSize: 13 }}>
           {['采购入库登记', '批次质检', '班组申请领料', '仓管核对发料', '班长确认领用',
-            '退库/损耗/签证', '盘点调账', '月底班组核算'].map((s, i, arr) => (
+            '退库/损耗/签证', '盘点差异追查', '月底班组核算'].map((s, i, arr) => (
             <React.Fragment key={s}>
               <span className={`step ${i === 2 || i === 5 ? 'on' : ''}`}>{s}</span>
               {i < arr.length - 1 && <span className="arr">→</span>}
@@ -80,7 +80,7 @@ export default function Dashboard() {
               <div>材料员关注：入库质检、发料核对、退库入库、损耗核销、盘点账实与<b>月底损耗复盘</b>。</div>
               <div className="btn-row" style={{ marginTop: 10 }}>
                 <button className="btn" onClick={() => go('/batches')}>入库与质检</button>
-                <button className="btn" onClick={() => go('/stock-checks')}>盘点调账</button>
+                <button className="btn" onClick={() => go('/stock-checks')}>差异追查</button>
                 <button className="btn" onClick={() => go('/waste-review')}>损耗复盘</button>
               </div>
             </>}

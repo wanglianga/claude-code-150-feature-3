@@ -74,6 +74,34 @@ public final class Requests {
     public record StockCheckRequest(String scope, String remark,
                                     @NotNull List<CheckItemIn> items) {}
 
+    /** 盘点差异追查：补录班组领料（夜间未登记领料等） */
+    public record BackfillRequest(@NotNull Long crewId,
+                                  @NotNull @PositiveOrZero Double qty,
+                                  @NotBlank String building,
+                                  String area,
+                                  @NotBlank String process,
+                                  String remark) {}
+
+    /** 盘点差异追查：无法定位责任，转入项目公共损耗 */
+    public record CommonLossRequest(@NotNull @PositiveOrZero Double qty,
+                                    @NotBlank String building,
+                                    String remark) {}
+
+    /** 项目经理确认盘点差异对施工进度的影响 */
+    public record ImpactRequest(@NotBlank String impactLevel, String impactNote) {}
+
+    /** 监控交接登记 */
+    public record HandoverRequest(@NotBlank String fromKeeper,
+                                  @NotBlank String toKeeper,
+                                  String cctvRef,
+                                  @NotBlank String note,
+                                  Long relatedCrewId,
+                                  Long relatedMaterialId,
+                                  String handoverTime) {}
+
+    /** 班组领料审批限制设置/解除 */
+    public record CrewRestrictionRequest(@NotNull Boolean restricted, String reason) {}
+
     public record InboundRequest(
             @NotNull Long materialId,
             String spec,

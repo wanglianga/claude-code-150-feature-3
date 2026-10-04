@@ -11,12 +11,13 @@ export const ROLE_LABEL = {
 }
 
 export const STATUS_LABEL = {
-  DRAFT: '草稿', SUBMITTED: '待处理', ISSUED: '已发料', REJECTED: '已驳回',
-  CONFIRMED: '已确认', CLAIMED: '已索赔', COUNTING: '盘点中', ADJUSTED: '已调账'
+  DRAFT: '草稿', SUBMITTED: '待处理', PENDING_PM: '待项目经理审批',
+  ISSUED: '已发料', REJECTED: '已驳回',
+  CONFIRMED: '已确认', CLAIMED: '已索赔', COUNTING: '追查中', ADJUSTED: '已调账', CLOSED: '已关闭'
 }
 export const STATUS_TONE = {
-  DRAFT: 'gray', SUBMITTED: 'amber', ISSUED: 'green', REJECTED: 'red',
-  CONFIRMED: 'green', CLAIMED: 'blue', COUNTING: 'amber', ADJUSTED: 'blue',
+  DRAFT: 'gray', SUBMITTED: 'amber', PENDING_PM: 'amber', ISSUED: 'green', REJECTED: 'red',
+  CONFIRMED: 'green', CLAIMED: 'blue', COUNTING: 'amber', ADJUSTED: 'blue', CLOSED: 'blue',
   PASSED: 'green', PENDING: 'amber', FAILED: 'red', CONDITIONAL: 'blue'
 }
 
@@ -36,6 +37,8 @@ export const CONDITION = { GOOD: '完好可再发', DAMAGED: '损坏(班组责�
 export const CAUSE_LABEL = {
   DESIGN: '设计变更', CONSTRUCTION: '施工错误', STORAGE: '保管不当', QUALITY: '供应商质量', OTHER: '其他'
 }
+export const IMPACT_LABEL = { NONE: '无影响', MINOR: '轻微影响', MAJOR: '重大影响' }
+export const IMPACT_TONE = { NONE: 'green', MINOR: 'amber', MAJOR: 'red' }
 
 export const fmt = (v, d = 2) =>
   v === null || v === undefined || v === '' ? '—'
